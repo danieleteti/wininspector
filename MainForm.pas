@@ -37,7 +37,7 @@ implementation
 
 procedure TfrmMain.FormCreate(Sender: TObject);
 begin
-  Caption := 'WindowSpy - The TDWinInfo Legacy Continues';
+  Caption := 'WinInspector - The TDWinInfo Legacy Continues';
   StatusBar1.Panels[0].Text := 'Copyright 2001 - ' + YearOf(Date).ToString +
     ' by Daniele Teti - https://github.com/danieleteti/wininspector';
 
@@ -55,7 +55,7 @@ begin
 
   // Dimensioni form
   Width := 600;
-  Height := 500;
+  Height := 800;
   Position := poScreenCenter;
 end;
 
