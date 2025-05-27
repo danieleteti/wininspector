@@ -5,12 +5,14 @@ interface
 uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants,
   System.Classes, Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs,
-  Vcl.StdCtrls, Vcl.ExtCtrls, System.StrUtils, Winapi.PsApi;
+  Vcl.StdCtrls, Vcl.ExtCtrls, System.StrUtils, Winapi.PsApi, Vcl.ComCtrls,
+  System.DateUtils;
 
 type
   TfrmMain = class(TForm)
     memoInfo: TMemo;
     timerUpdate: TTimer;
+    StatusBar1: TStatusBar;
     procedure FormCreate(Sender: TObject);
     procedure timerUpdateTimer(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
@@ -35,7 +37,9 @@ implementation
 
 procedure TfrmMain.FormCreate(Sender: TObject);
 begin
-  Caption := Caption +  ' - Windows Monitor';
+  Caption := 'WindowSpy - The TDWinInfo Legacy Continues';
+  StatusBar1.Panels[0].Text := 'Copyright 2001 - ' + YearOf(Date).ToString +
+    ' by Daniele Teti - https://github.com/danieleteti/wininspector';
 
   // Setup del memo
   memoInfo.Clear;
@@ -190,8 +194,13 @@ begin
     Exit;
   end;
 
-  Style := GetWindowLong(Handle, GWL_STYLE);
-  ExStyle := GetWindowLong(Handle, GWL_EXSTYLE);
+  try
+    Style := GetWindowLongPtr(Handle, GWL_STYLE);
+    ExStyle := GetWindowLongPtr(Handle, GWL_EXSTYLE);
+  except
+    Result := 'Error reading window styles';
+    Exit;
+  end;
 
   StyleInfo := TStringList.Create;
   try

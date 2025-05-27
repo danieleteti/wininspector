@@ -1,9 +1,9 @@
 object frmMain: TfrmMain
   Left = 0
   Top = 0
-  Caption = 'WinInspector - TDWinInfo Reborn'
-  ClientHeight = 585
-  ClientWidth = 561
+  Caption = 'WinInspector - The TDWinInfo Legacy Continues'
+  ClientHeight = 441
+  ClientWidth = 624
   Color = clBtnFace
   Font.Charset = DEFAULT_CHARSET
   Font.Color = clWindowText
@@ -17,8 +17,8 @@ object frmMain: TfrmMain
   object memoInfo: TMemo
     Left = 0
     Top = 0
-    Width = 561
-    Height = 585
+    Width = 624
+    Height = 422
     Align = alClient
     Font.Charset = DEFAULT_CHARSET
     Font.Color = clWindowText
@@ -31,8 +31,19 @@ object frmMain: TfrmMain
     ReadOnly = True
     ScrollBars = ssVertical
     TabOrder = 0
-    ExplicitWidth = 624
-    ExplicitHeight = 441
+  end
+  object StatusBar1: TStatusBar
+    Left = 0
+    Top = 422
+    Width = 624
+    Height = 19
+    Panels = <
+      item
+        Text = 
+          'Copyright 2025 by Daniele Teti - https://github.com/danieleteti/' +
+          'wininspector'
+        Width = 50
+      end>
   end
   object timerUpdate: TTimer
     Interval = 500
