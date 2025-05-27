@@ -3,6 +3,8 @@ WinInspector is a real-time Windows inspection utility that provides comprehensi
 
 Read the full blog post about [WinInspector](https://www.danieleteti.it/post/wininspector-the-tdwininfo-legacy-continues/).
 
+![](https://raw.githubusercontent.com/danieleteti/wininspector/refs/heads/main/docs/wininspector_sample01.png)
+
 🚀 Key Features
 - Real-time window inspection - Live updates every 500ms as you move your mouse
 - Comprehensive window details - Handle, class name, title, dimensions, visibility, styles
