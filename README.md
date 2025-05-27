@@ -26,4 +26,4 @@ Read the full blog post about [WinInspector](https://www.danieleteti.it/post/win
 - QA engineers testing window behavior
 - Anyone curious about Windows internals
 
-From the creator of DelphiMVCFramework - A modern evolution of the classic TDWinInfo tool with enhanced capabilities for today's multi-monitor, complex Windows environments.
+WinInspector is a modern evolution of the classic TDWinInfo tool with enhanced capabilities for today's multi-monitor, complex Windows environments.
