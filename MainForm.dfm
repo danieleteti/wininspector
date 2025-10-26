@@ -15,31 +15,68 @@ object frmMain: TfrmMain
   OnCreate = FormCreate
   OnDestroy = FormDestroy
   TextHeight = 15
-  object PageControl1: TPageControl
+  object PanelStatus: TPanel
     Left = 0
     Top = 0
     Width = 700
-    Height = 577
+    Height = 25
+    Align = alTop
+    BevelOuter = bvNone
+    TabOrder = 0
+    object lblStatus: TLabel
+      AlignWithMargins = True
+      Left = 5
+      Top = 5
+      Width = 690
+      Height = 15
+      Margins.Left = 5
+      Margins.Top = 5
+      Margins.Right = 5
+      Margins.Bottom = 5
+      Align = alClient
+      Caption = 'Inspecting...'
+      Font.Charset = DEFAULT_CHARSET
+      Font.Color = clWindowText
+      Font.Height = -12
+      Font.Name = 'Segoe UI'
+      Font.Style = [fsBold]
+      ParentFont = False
+      ExplicitWidth = 67
+    end
+  end
+  object PageControl1: TPageControl
+    Left = 0
+    Top = 25
+    Width = 700
+    Height = 552
     ActivePage = TabSheet1
     Align = alClient
-    TabOrder = 0
+    DoubleBuffered = True
+    ParentDoubleBuffered = False
+    TabOrder = 1
     object TabSheet1: TTabSheet
       Caption = 'Window Info'
       object memoWindowInfo: TMemo
         Left = 0
         Top = 0
         Width = 692
-        Height = 547
+        Height = 522
         Align = alClient
+        BorderStyle = bsNone
+        Ctl3D = False
+        DoubleBuffered = True
         Font.Charset = DEFAULT_CHARSET
         Font.Color = clWindowText
         Font.Height = -13
         Font.Name = 'Consolas'
         Font.Style = []
+        ParentCtl3D = False
+        ParentDoubleBuffered = False
         ParentFont = False
         ReadOnly = True
         ScrollBars = ssVertical
         TabOrder = 0
+        WordWrap = False
       end
     end
     object TabSheet2: TTabSheet
@@ -49,17 +86,21 @@ object frmMain: TfrmMain
         Left = 0
         Top = 0
         Width = 692
-        Height = 547
+        Height = 522
         Align = alClient
+        BorderStyle = bsNone
+        DoubleBuffered = True
         Font.Charset = DEFAULT_CHARSET
         Font.Color = clWindowText
         Font.Height = -13
         Font.Name = 'Consolas'
         Font.Style = []
+        ParentDoubleBuffered = False
         ParentFont = False
         ReadOnly = True
         ScrollBars = ssVertical
         TabOrder = 0
+        WordWrap = False
       end
     end
   end
@@ -70,16 +111,16 @@ object frmMain: TfrmMain
     Height = 19
     Panels = <
       item
-        Text =
+        Text = 
           'Copyright 2025 by Daniele Teti - https://github.com/danieleteti/' +
           'wininspector'
         Width = 50
       end>
   end
   object timerUpdate: TTimer
-    Interval = 500
+    Interval = 800
     OnTimer = timerUpdateTimer
-    Left = 32
-    Top = 32
+    Left = 56
+    Top = 88
   end
 end

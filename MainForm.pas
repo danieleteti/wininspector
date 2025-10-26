@@ -18,10 +18,13 @@ type
     TabSheet2: TTabSheet;
     memoWindowInfo: TMemo;
     memoDLLInfo: TMemo;
+    PanelStatus: TPanel;
+    lblStatus: TLabel;
     procedure FormCreate(Sender: TObject);
     procedure timerUpdateTimer(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
   private
+    FLastMouseOverWinInspector: Boolean;
     function GetWindowClassName(Handle: HWND): string;
     function GetWindowTitle(Handle: HWND): string;
     function GetProcessInfo(Handle: HWND): string;
@@ -35,6 +38,7 @@ type
     function ExtractDelphiVersionFromBPL(const BPLName: string): string;
     function GetFileVersionInfo(const FileName: string): string;
     function GetRealModulePath(ProcessHandle: THandle; ModuleHandle: HMODULE): string;
+    function IsMouseOverWinInspector: Boolean;
     procedure UpdateWindowInfo;
   public
   end;
@@ -48,7 +52,7 @@ implementation
 
 procedure TfrmMain.FormCreate(Sender: TObject);
 begin
-  Caption := 'WinInspector - The TDWinInfo Legacy Continues';
+  Caption := 'WinInspector 2.1.0 - The TDWinInfo Legacy Continues';
   StatusBar1.Panels[0].Text := 'Copyright 2001 - ' + YearOf(Date).ToString +
     ' by Daniele Teti - https://github.com/danieleteti/wininspector';
 
@@ -74,11 +78,14 @@ begin
   memoDLLInfo.Align := alClient;
   memoDLLInfo.Parent := TabSheet2;
 
-  // Setup del timer
-  timerUpdate.Interval := 500; // 500ms come richiesto
+  // Setup timer
+  timerUpdate.Interval := 500; // 500ms as requested
   timerUpdate.Enabled := True;
 
-  // Dimensioni form più ragionevoli
+  // Initialize mouse state
+  FLastMouseOverWinInspector := False;
+
+  // Reasonable form dimensions
   Width := 700;
   Height := 600;
   Position := poScreenCenter;
@@ -87,6 +94,27 @@ end;
 procedure TfrmMain.FormDestroy(Sender: TObject);
 begin
   timerUpdate.Enabled := False;
+end;
+
+function TfrmMain.IsMouseOverWinInspector: Boolean;
+var
+  MousePos: TPoint;
+  WindowHandle: HWND;
+  RootHandle: HWND;
+begin
+  Result := False;
+
+  GetCursorPos(MousePos);
+  WindowHandle := WindowFromPoint(MousePos);
+
+  if WindowHandle = 0 then
+    Exit;
+
+  // Get the root window
+  RootHandle := GetAncestor(WindowHandle, GA_ROOT);
+
+  // Check if it's WinInspector itself
+  Result := (RootHandle = Self.Handle) or (WindowHandle = Self.Handle);
 end;
 
 procedure TfrmMain.timerUpdateTimer(Sender: TObject);
@@ -108,7 +136,7 @@ begin
   end;
 
   try
-    // Alloca buffer di dimensione fissa per il nome classe
+    // Allocate fixed-size buffer for class name
     GetMem(Buffer, 256 * SizeOf(Char));
     try
       FillChar(Buffer^, 256 * SizeOf(Char), 0);
@@ -138,17 +166,17 @@ begin
   end;
 
   try
-    // Ottieni prima la lunghezza necessaria
+    // Get the required length first
     Len := GetWindowTextLength(Handle);
     if Len <= 0 then
       Exit;
 
-    // Alloca buffer dinamico
+    // Allocate dynamic buffer
     GetMem(Buffer, (Len + 1) * SizeOf(Char));
     try
       FillChar(Buffer^, (Len + 1) * SizeOf(Char), 0);
 
-      // Ottieni il testo
+      // Get the text
       if GetWindowText(Handle, Buffer, Len + 1) > 0 then
         Result := string(Buffer);
     finally
@@ -212,7 +240,7 @@ var
   Style, ExStyle: DWORD;
   StyleInfo: TStringList;
 begin
-  // Controlla se l'handle è valido
+  // Check if handle is valid
   if (Handle = 0) or not IsWindow(Handle) then
   begin
     Result := 'Invalid window handle';
@@ -229,7 +257,7 @@ begin
 
   StyleInfo := TStringList.Create;
   try
-    // Stili principali
+    // Main styles
     if (Style and WS_VISIBLE) <> 0 then StyleInfo.Add('VISIBLE');
     if (Style and WS_CHILD) <> 0 then StyleInfo.Add('CHILD');
     if (Style and WS_POPUP) <> 0 then StyleInfo.Add('POPUP');
@@ -237,7 +265,7 @@ begin
     if (Style and WS_MAXIMIZE) <> 0 then StyleInfo.Add('MAXIMIZED');
     if (Style and WS_DISABLED) <> 0 then StyleInfo.Add('DISABLED');
 
-    // Stili estesi
+    // Extended styles
     if (ExStyle and WS_EX_TOPMOST) <> 0 then StyleInfo.Add('TOPMOST');
     if (ExStyle and WS_EX_TOOLWINDOW) <> 0 then StyleInfo.Add('TOOLWINDOW');
     if (ExStyle and WS_EX_TRANSPARENT) <> 0 then StyleInfo.Add('TRANSPARENT');
@@ -278,12 +306,12 @@ var
 begin
   InfoList := TStringList.Create;
   try
-    // Informazioni base schermo
+    // Basic screen information
     ScreenWidth := GetSystemMetrics(SM_CXSCREEN);
     ScreenHeight := GetSystemMetrics(SM_CYSCREEN);
     MonitorCount := GetSystemMetrics(SM_CMONITORS);
 
-    // Area di lavoro (esclude taskbar)
+    // Work area (excludes taskbar)
     SystemParametersInfo(SPI_GETWORKAREA, 0, @WorkAreaRect, 0);
 
     InfoList.Add(Format('Screen resolution: %dx%d', [ScreenWidth, ScreenHeight]));
@@ -293,7 +321,7 @@ begin
       WorkAreaRect.Right, WorkAreaRect.Bottom]));
     InfoList.Add(Format('Mouse on screen: (%d,%d)', [MousePos.X, MousePos.Y]));
 
-    // Informazioni aggiuntive sul display se multi-monitor
+    // Additional display information if multi-monitor
     if MonitorCount > 1 then
     begin
       InfoList.Add(Format('Virtual desktop: %dx%d', [
@@ -320,7 +348,7 @@ end;
 
 function TfrmMain.IsDelphiVCLWindow(const ClassName: string): Boolean;
 begin
-  // Identifica classi VCL comuni di Delphi
+  // Identify common Delphi VCL classes
   Result := (Pos('T', ClassName) = 1) and
             ((Pos('Form', ClassName) > 0) or
              (Pos('Button', ClassName) > 0) or
@@ -365,12 +393,12 @@ begin
     Info.Add('🎨  VCL/DELPHI COMPONENT DETECTED:');
     Info.Add(Format('   Component Type: %s', [ClassName]));
 
-    // Ottieni testo del controllo
+    // Get control text
     WindowText := GetWindowTitle(Handle);
     if (WindowText <> '<No title>') and (WindowText <> '<Invalid handle>') then
       Info.Add(Format('   Text/Caption: "%s"', [WindowText]));
 
-    // Analizza gli stili per proprietà comuni
+    // Analyze styles for common properties
     try
       Style := GetWindowLongPtr(Handle, GWL_STYLE);
       if Style = 0 then
@@ -392,7 +420,7 @@ begin
       Exit;
     end;
 
-    // Identifica proprietà specifiche per tipo
+    // Identify type-specific properties
     if (Pos('Edit', ClassName) > 0) or (Pos('Memo', ClassName) > 0) then
     begin
       IsReadOnly := (Style and ES_READONLY) <> 0;
@@ -419,7 +447,7 @@ begin
           BST_INDETERMINATE: Info.Add('   State: Indeterminate');
         end;
       except
-        // Ignora errori SendMessage
+        // Ignore SendMessage errors
       end;
     end
     else if Pos('Radio', ClassName) > 0 then
@@ -428,7 +456,7 @@ begin
         var RadioState := SendMessage(Handle, BM_GETCHECK, 0, 0);
         Info.Add(Format('   Checked: %s', [BoolToStr(RadioState = BST_CHECKED, True)]));
       except
-        // Ignora errori SendMessage
+        // Ignore SendMessage errors
       end;
     end
     else if Pos('List', ClassName) > 0 then
@@ -443,7 +471,7 @@ begin
             Info.Add(Format('   ItemIndex: %d', [SelIndex]));
         end;
       except
-        // Ignora errori SendMessage
+        // Ignore SendMessage errors
       end;
     end
     else if Pos('Combo', ClassName) > 0 then
@@ -458,11 +486,11 @@ begin
             Info.Add(Format('   ItemIndex: %d', [SelIndex]));
         end;
       except
-        // Ignora errori SendMessage
+        // Ignore SendMessage errors
       end;
     end;
 
-    // Analizza il parent per contesto
+    // Analyze parent for context
     ParentHandle := GetParent(Handle);
     if ParentHandle <> 0 then
     begin
@@ -473,7 +501,7 @@ begin
         Info.Add(Format('   Parent Container: %s (GroupBox)', [ParentClassName]));
     end;
 
-    // Informazioni aggiuntive
+    // Additional information
     Info.Add('   ℹ️  VCL component properties extracted via Windows API');
 
     Result := Info.Text;
@@ -551,12 +579,12 @@ begin
   try
     FillChar(Buffer, SizeOf(Buffer), 0);
 
-    // GetModuleFileNameEx ritorna il path reale, non quello rediretto
+    // GetModuleFileNameEx returns the real path, not the redirected one
     Len := GetModuleFileNameEx(ProcessHandle, ModuleHandle, Buffer, MAX_PATH);
     if Len > 0 then
       Result := string(Buffer);
   except
-    Result := ''; // In caso di errore, ritorna stringa vuota
+    Result := ''; // In case of error, return empty string
   end;
 end;
 
@@ -580,7 +608,7 @@ begin
 
   GetWindowThreadProcessId(Handle, @ProcessId);
 
-  // Apri il processo per GetModuleFileNameEx
+  // Open process for GetModuleFileNameEx
   ProcessHandle := OpenProcess(PROCESS_QUERY_INFORMATION or PROCESS_VM_READ, False, ProcessId);
   if ProcessHandle = 0 then
     Exit;
@@ -591,7 +619,7 @@ begin
   try
     Info.Add('📚  LOADED LIBRARIES:');
 
-    // Crea snapshot dei moduli del processo
+    // Create snapshot of process modules
     SnapshotHandle := CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, ProcessId);
     if SnapshotHandle <> INVALID_HANDLE_VALUE then
     begin
@@ -605,12 +633,12 @@ begin
               var ModuleName := UpperCase(ModuleEntry.szModule);
               var ModuleExt := UpperCase(ExtractFileExt(ModuleEntry.szExePath));
 
-              // Ottieni il path REALE (non rediretto da WOW64)
+              // Get the REAL path (not redirected by WOW64)
               RealPath := GetRealModulePath(ProcessHandle, ModuleEntry.hModule);
               if RealPath = '' then
-                RealPath := string(ModuleEntry.szExePath); // Fallback al path originale
+                RealPath := string(ModuleEntry.szExePath); // Fallback to original path
 
-              // Identifica BPL Delphi o exe principale Delphi
+              // Identify Delphi BPL or main Delphi exe
               var IsBPL := (ModuleExt = '.BPL') or
                            (Pos('RTL', ModuleName) > 0) or
                            (Pos('VCL', ModuleName) > 0) or
@@ -635,7 +663,7 @@ begin
                   DLLList.Add(Format('%s', [RealPath]));
               end;
             except
-              // Ignora errori su singoli moduli e continua con il prossimo
+              // Ignore errors on individual modules and continue with next
             end;
           until not Module32Next(SnapshotHandle, ModuleEntry);
         end;
@@ -644,7 +672,7 @@ begin
       end;
     end;
 
-    // Ordina le liste alfabeticamente per path completo
+    // Sort lists alphabetically by full path
     BPLList.Sort;
     DLLList.Sort;
 
@@ -657,7 +685,7 @@ begin
       Info.Add('');
     end;
 
-    // Output DLL complete
+    // Output complete DLL list
     if DLLList.Count > 0 then
     begin
       Info.Add(Format('📦 Standard DLLs (%d total):', [DLLList.Count]));
@@ -678,25 +706,51 @@ end;
 procedure TfrmMain.UpdateWindowInfo;
 var
   MousePos: TPoint;
-  WindowHandle, ParentHandle, RootHandle: HWND;
+  WindowHandle, ParentHandle: HWND;
   Info: TStringList;
   IsResponding: Boolean;
   MonitorInfoLines: TStringList;
   i: Integer;
+  MouseOverWinInspector: Boolean;
+  ProcessId: DWORD;
+  ProcessHandle: THandle;
+  ExeName: string;
+  Buffer: array[0..MAX_PATH] of Char;
 begin
-  // Ottieni posizione mouse
+  // Check if mouse is over WinInspector
+  MouseOverWinInspector := IsMouseOverWinInspector;
+
+  // Update visual indicator
+  if MouseOverWinInspector then
+  begin
+    lblStatus.Caption := '⏸️  PAUSED - Mouse over WinInspector (move mouse away to resume)';
+    lblStatus.Font.Color := clRed;
+    PanelStatus.Color := $00E0E0FF; // Light red
+  end;
+
+  // If mouse is over WinInspector, suspend update
+  if MouseOverWinInspector then
+  begin
+    FLastMouseOverWinInspector := True;
+    Exit;
+  end;
+
+  // Mouse has left WinInspector
+  FLastMouseOverWinInspector := False;
+
+  // Get mouse position
   GetCursorPos(MousePos);
 
-  // Trova finestra sotto il cursore
+  // Find window under cursor
   WindowHandle := WindowFromPoint(MousePos);
 
   Info := TStringList.Create;
   MonitorInfoLines := TStringList.Create;
   try
-    // Evita flickering durante l'aggiornamento - TAB 1: Window Info
+    // Avoid flickering during update - TAB 1: Window Info
     memoWindowInfo.Lines.BeginUpdate;
     try
-      // Pulisci esplicitamente il memo prima di aggiornare
+      // Explicitly clear memo before update
       memoWindowInfo.Lines.Clear;
 
       Info.Add(Format('🖱️  MOUSE POSITION: (%d, %d)', [MousePos.X, MousePos.Y]));
@@ -704,6 +758,25 @@ begin
 
       if WindowHandle <> 0 then
       begin
+        // Update status label with process name
+        GetWindowThreadProcessId(WindowHandle, @ProcessId);
+        ProcessHandle := OpenProcess(PROCESS_QUERY_INFORMATION or PROCESS_VM_READ, False, ProcessId);
+        if ProcessHandle <> 0 then
+        begin
+          try
+            FillChar(Buffer, SizeOf(Buffer), 0);
+            if GetModuleFileNameEx(ProcessHandle, 0, Buffer, MAX_PATH) > 0 then
+            begin
+              ExeName := ExtractFileName(string(Buffer));
+              lblStatus.Caption := Format('▶️  Inspecting: %s (PID: %d)', [ExeName, ProcessId]);
+              lblStatus.Font.Color := clGreen;
+              PanelStatus.Color := $00E0FFE0; // Light green
+            end;
+          finally
+            CloseHandle(ProcessHandle);
+          end;
+        end;
+
         Info.Add('🪟  CURRENT WINDOW:');
         Info.Add(Format('   Handle: 0x%x (%d)', [WindowHandle, WindowHandle]));
         Info.Add(Format('   Class: %s', [GetWindowClassName(WindowHandle)]));
@@ -713,31 +786,41 @@ begin
         Info.Add(Format('   %s', [GetProcessInfo(WindowHandle)]));
         Info.Add(Format('   %s', [GetWindowStyleInfo(WindowHandle)]));
 
-        // Verifica se la finestra risponde
+        // Check if window responds
         IsResponding := SendMessageTimeout(WindowHandle, WM_NULL, 0, 0,
           SMTO_ABORTIFHUNG or SMTO_BLOCK, 100, nil) <> 0;
         Info.Add(Format('   Responds: %s', [IfThen(IsResponding, 'Yes', 'No')]));
 
-        // Informazioni sulla finestra parent
-        ParentHandle := GetParent(WindowHandle);
-        if ParentHandle <> 0 then
-        begin
-          Info.Add('');
-          Info.Add('👨‍👦  PARENT WINDOW:');
-          Info.Add(Format('   Handle: 0x%x (%d)', [ParentHandle, ParentHandle]));
-          Info.Add(Format('   Class: %s', [GetWindowClassName(ParentHandle)]));
-          Info.Add(Format('   Title: %s', [GetWindowTitle(ParentHandle)]));
-        end;
+        // Complete hierarchy (from current control to root)
+        Info.Add('');
+        Info.Add('📊 WINDOW HIERARCHY (bottom → top):');
+        var CurrentHandle := WindowHandle;
+        var Level := 0;
+        var MaxLevels := 20; // Protection against infinite loops
 
-        // Finestra root (top-level)
-        RootHandle := GetAncestor(WindowHandle, GA_ROOT);
-        if (RootHandle <> 0) and (RootHandle <> WindowHandle) and (RootHandle <> ParentHandle) then
+        while (CurrentHandle <> 0) and (Level < MaxLevels) do
         begin
-          Info.Add('');
-          Info.Add('🏠  ROOT WINDOW:');
-          Info.Add(Format('   Handle: 0x%x (%d)', [RootHandle, RootHandle]));
-          Info.Add(Format('   Class: %s', [GetWindowClassName(RootHandle)]));
-          Info.Add(Format('   Title: %s', [GetWindowTitle(RootHandle)]));
+          var ClassName := GetWindowClassName(CurrentHandle);
+          var Title := GetWindowTitle(CurrentHandle);
+          var HandleStr := Format('0x%x', [CurrentHandle]);
+
+          // Visual indentation per level
+          var Indent := StringOfChar(' ', Level * 3);
+
+          if Title <> '' then
+            Info.Add(Format('   %s[%d] %s - %s ("%s")', [Indent, Level, HandleStr, ClassName, Title]))
+          else
+            Info.Add(Format('   %s[%d] %s - %s', [Indent, Level, HandleStr, ClassName]));
+
+          // Go to parent
+          ParentHandle := GetParent(CurrentHandle);
+
+          // Protection against loops (parent equals itself)
+          if ParentHandle = CurrentHandle then
+            Break;
+
+          CurrentHandle := ParentHandle;
+          Inc(Level);
         end;
       end
       else
@@ -745,7 +828,7 @@ begin
         Info.Add('❌ No window found under cursor');
       end;
 
-      // Sezione VCL Component Inspector
+      // VCL Component Inspector section
       var VCLInfo := GetVCLComponentInfo(WindowHandle);
       if VCLInfo <> '' then
       begin
@@ -753,11 +836,11 @@ begin
         Info.Add(VCLInfo);
       end;
 
-      // Sezione monitor alla fine
+      // Monitor section at the end
       Info.Add('');
       Info.Add('🖥️  MONITOR:');
 
-      // Gestisci correttamente le righe multiple del monitor
+      // Handle monitor multi-line output correctly
       MonitorInfoLines.Text := GetMonitorInfo(MousePos);
       for i := 0 to MonitorInfoLines.Count - 1 do
         Info.Add('   ' + MonitorInfoLines[i]);
