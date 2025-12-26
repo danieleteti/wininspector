@@ -7,9 +7,25 @@ uses
   System.Classes, Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs,
   Vcl.StdCtrls, Vcl.ExtCtrls, System.StrUtils, Winapi.PsApi, Vcl.ComCtrls,
   System.DateUtils, System.Rtti, System.TypInfo, Winapi.TlHelp32,
-  System.Generics.Collections;
+  System.Generics.Collections, Vcl.Clipbrd, Vcl.Buttons;
+
+const
+  HOTKEY_ID_FREEZE = 1;
+  MAX_HISTORY_ITEMS = 50;
 
 type
+  TWindowHistoryItem = record
+    Timestamp: TDateTime;
+    Handle: HWND;
+    ClassName: string;
+    Title: string;
+    ProcessName: string;
+    ProcessId: DWORD;
+    Position: TPoint;
+    Size: TSize;
+    PixelColor: TColor;
+  end;
+
   TfrmMain = class(TForm)
     timerUpdate: TTimer;
     StatusBar1: TStatusBar;
@@ -20,11 +36,31 @@ type
     memoDLLInfo: TMemo;
     PanelStatus: TPanel;
     lblStatus: TLabel;
+    TabSheet3: TTabSheet;
+    memoHistory: TMemo;
+    PanelToolbar: TPanel;
+    btnCopyWindowInfo: TSpeedButton;
+    btnCopyDLLInfo: TSpeedButton;
+    btnClearHistory: TSpeedButton;
+    PanelColorPreview: TPanel;
+    lblColorInfo: TLabel;
+    btnToggleFreeze: TSpeedButton;
     procedure FormCreate(Sender: TObject);
     procedure timerUpdateTimer(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
+    procedure btnCopyWindowInfoClick(Sender: TObject);
+    procedure btnCopyDLLInfoClick(Sender: TObject);
+    procedure btnClearHistoryClick(Sender: TObject);
+    procedure btnToggleFreezeClick(Sender: TObject);
   private
     FLastMouseOverWinInspector: Boolean;
+    FFrozen: Boolean;
+    FFrozenHandle: HWND;
+    FFrozenMousePos: TPoint;
+    FHistory: TList<TWindowHistoryItem>;
+    FLastHistoryHandle: HWND;
+    FHotkeyRegistered: Boolean;
+    FHotkeyName: string;
     function GetWindowClassName(Handle: HWND): string;
     function GetWindowTitle(Handle: HWND): string;
     function GetProcessInfo(Handle: HWND): string;
@@ -40,6 +76,13 @@ type
     function GetRealModulePath(ProcessHandle: THandle; ModuleHandle: HMODULE): string;
     function IsMouseOverWinInspector: Boolean;
     procedure UpdateWindowInfo;
+    function GetPixelColorUnderCursor(const Pos: TPoint): TColor;
+    function ColorToHexString(Color: TColor): string;
+    procedure AddToHistory(Handle: HWND; const MousePos: TPoint; PixelColor: TColor);
+    procedure UpdateHistoryDisplay;
+    procedure ToggleFreeze;
+    procedure WMHotKey(var Msg: TMessage); message WM_HOTKEY;
+    function GetAppVersion: string;
   public
   end;
 
@@ -50,15 +93,55 @@ implementation
 
 {$R *.dfm}
 
-procedure TfrmMain.FormCreate(Sender: TObject);
+function TfrmMain.GetAppVersion: string;
+var
+  VerInfoSize: DWORD;
+  VerInfo: Pointer;
+  VerValueSize: DWORD;
+  VerValue: PVSFixedFileInfo;
+  Dummy: DWORD;
+  ExeName: string;
 begin
-  Caption := 'WinInspector 2.1.0 - The TDWinInfo Legacy Continues';
-  StatusBar1.Panels[0].Text := 'Copyright 2001 - ' + YearOf(Date).ToString +
-    ' by Daniele Teti - https://github.com/danieleteti/wininspector';
+  Result := '';
+  ExeName := ParamStr(0);
+
+  VerInfoSize := GetFileVersionInfoSize(PChar(ExeName), Dummy);
+  if VerInfoSize > 0 then
+  begin
+    GetMem(VerInfo, VerInfoSize);
+    try
+      if Winapi.Windows.GetFileVersionInfo(PChar(ExeName), 0, VerInfoSize, VerInfo) then
+      begin
+        if VerQueryValue(VerInfo, '\', Pointer(VerValue), VerValueSize) then
+        begin
+          Result := Format('%d.%d.%d',
+            [HiWord(VerValue^.dwFileVersionMS),
+             LoWord(VerValue^.dwFileVersionMS),
+             HiWord(VerValue^.dwFileVersionLS)]);
+        end;
+      end;
+    finally
+      FreeMem(VerInfo);
+    end;
+  end;
+
+  if Result = '' then
+    Result := '2.2.0'; // Fallback
+end;
+
+procedure TfrmMain.FormCreate(Sender: TObject);
+var
+  AppVersion: string;
+begin
+  AppVersion := GetAppVersion;
+  Caption := 'WinInspector ' + AppVersion + ' - The TDWinInfo Legacy Continues';
+  StatusBar1.Panels[0].Text := 'v' + AppVersion + ' | Copyright 2001-' + YearOf(Date).ToString +
+    ' Daniele Teti | https://github.com/danieleteti/wininspector';
 
   // Setup tabs
   TabSheet1.Caption := 'Window Info';
   TabSheet2.Caption := 'DLL/Libraries';
+  TabSheet3.Caption := 'History';
 
   // Setup memo Window Info
   memoWindowInfo.Clear;
@@ -78,6 +161,15 @@ begin
   memoDLLInfo.Align := alClient;
   memoDLLInfo.Parent := TabSheet2;
 
+  // Setup memo History
+  memoHistory.Clear;
+  memoHistory.Font.Name := 'Consolas';
+  memoHistory.Font.Size := 10;
+  memoHistory.ScrollBars := ssVertical;
+  memoHistory.ReadOnly := True;
+  memoHistory.Align := alClient;
+  memoHistory.Parent := TabSheet3;
+
   // Setup timer
   timerUpdate.Interval := 500; // 500ms as requested
   timerUpdate.Enabled := True;
@@ -85,15 +177,263 @@ begin
   // Initialize mouse state
   FLastMouseOverWinInspector := False;
 
+  // Initialize freeze state
+  FFrozen := False;
+  FFrozenHandle := 0;
+
+  // Initialize history
+  FHistory := TList<TWindowHistoryItem>.Create;
+  FLastHistoryHandle := 0;
+
+  // Setup toolbar buttons
+  btnCopyWindowInfo.Caption := '📋 Copy Window';
+  btnCopyWindowInfo.Flat := True;
+  btnCopyDLLInfo.Caption := '📋 Copy DLLs';
+  btnCopyDLLInfo.Flat := True;
+  btnClearHistory.Caption := '🗑 Clear History';
+  btnClearHistory.Flat := True;
+  btnToggleFreeze.Flat := True;
+
+  // Register global hotkey (try multiple options)
+  FHotkeyName := '';
+  FHotkeyRegistered := RegisterHotKey(Handle, HOTKEY_ID_FREEZE, MOD_CONTROL, VK_F12);
+  if FHotkeyRegistered then
+    FHotkeyName := 'Ctrl+F12'
+  else
+  begin
+    FHotkeyRegistered := RegisterHotKey(Handle, HOTKEY_ID_FREEZE, MOD_ALT, VK_F12);
+    if FHotkeyRegistered then
+      FHotkeyName := 'Alt+F12'
+    else
+    begin
+      FHotkeyRegistered := RegisterHotKey(Handle, HOTKEY_ID_FREEZE, 0, VK_PAUSE);
+      if FHotkeyRegistered then
+        FHotkeyName := 'Pause'
+      else
+      begin
+        FHotkeyRegistered := RegisterHotKey(Handle, HOTKEY_ID_FREEZE, MOD_CONTROL or MOD_SHIFT, Ord('F'));
+        if FHotkeyRegistered then
+          FHotkeyName := 'Ctrl+Shift+F';
+      end;
+    end;
+  end;
+
+  if FHotkeyName <> '' then
+    btnToggleFreeze.Caption := '⏸ Freeze (' + FHotkeyName + ')'
+  else
+    btnToggleFreeze.Caption := '⏸ Freeze';
+
+  // Setup color preview panel
+  PanelColorPreview.Color := clBlack;
+  lblColorInfo.Caption := 'Color: #000000 | RGB(0,0,0)';
+
   // Reasonable form dimensions
-  Width := 700;
-  Height := 600;
+  Width := 920;
+  Height := 650;
   Position := poScreenCenter;
 end;
 
 procedure TfrmMain.FormDestroy(Sender: TObject);
 begin
   timerUpdate.Enabled := False;
+
+  // Unregister hotkey
+  if FHotkeyRegistered then
+    UnregisterHotKey(Handle, HOTKEY_ID_FREEZE);
+
+  // Free history list
+  FHistory.Free;
+end;
+
+procedure TfrmMain.WMHotKey(var Msg: TMessage);
+begin
+  if Msg.WParam = HOTKEY_ID_FREEZE then
+  begin
+    ToggleFreeze;
+    MessageBeep(MB_OK); // Audio feedback
+  end;
+end;
+
+procedure TfrmMain.ToggleFreeze;
+var
+  HotkeyHint: string;
+begin
+  FFrozen := not FFrozen;
+
+  if FHotkeyName <> '' then
+    HotkeyHint := ' (' + FHotkeyName + ')'
+  else
+    HotkeyHint := '';
+
+  if FFrozen then
+  begin
+    // Capture current state
+    GetCursorPos(FFrozenMousePos);
+    FFrozenHandle := WindowFromPoint(FFrozenMousePos);
+    btnToggleFreeze.Caption := '▶ Unfreeze' + HotkeyHint;
+    btnToggleFreeze.Font.Color := clRed;
+    // Force immediate visual update
+    if FHotkeyName <> '' then
+      lblStatus.Caption := '🔒 FROZEN - Press ' + FHotkeyName + ' or click Unfreeze to resume'
+    else
+      lblStatus.Caption := '🔒 FROZEN - Click Unfreeze to resume';
+    lblStatus.Font.Color := clRed;
+    PanelStatus.Color := $00E0E0FF;
+  end
+  else
+  begin
+    FFrozenHandle := 0;
+    btnToggleFreeze.Caption := '⏸ Freeze' + HotkeyHint;
+    btnToggleFreeze.Font.Color := clWindowText;
+    lblStatus.Caption := '▶️ Resumed - tracking mouse position';
+    lblStatus.Font.Color := clGreen;
+    PanelStatus.Color := $00E0FFE0;
+  end;
+end;
+
+procedure TfrmMain.btnToggleFreezeClick(Sender: TObject);
+begin
+  ToggleFreeze;
+end;
+
+procedure TfrmMain.btnCopyWindowInfoClick(Sender: TObject);
+begin
+  Clipboard.AsText := memoWindowInfo.Lines.Text;
+  lblStatus.Caption := '✓ Window Info copied to clipboard!';
+  lblStatus.Font.Color := clBlue;
+end;
+
+procedure TfrmMain.btnCopyDLLInfoClick(Sender: TObject);
+begin
+  Clipboard.AsText := memoDLLInfo.Lines.Text;
+  lblStatus.Caption := '✓ DLL Info copied to clipboard!';
+  lblStatus.Font.Color := clBlue;
+end;
+
+procedure TfrmMain.btnClearHistoryClick(Sender: TObject);
+begin
+  FHistory.Clear;
+  memoHistory.Clear;
+  lblStatus.Caption := '✓ History cleared';
+  lblStatus.Font.Color := clBlue;
+end;
+
+function TfrmMain.GetPixelColorUnderCursor(const Pos: TPoint): TColor;
+var
+  DC: HDC;
+begin
+  DC := GetDC(0); // Get screen DC
+  try
+    Result := GetPixel(DC, Pos.X, Pos.Y);
+  finally
+    ReleaseDC(0, DC);
+  end;
+end;
+
+function TfrmMain.ColorToHexString(Color: TColor): string;
+begin
+  Result := Format('#%.2x%.2x%.2x', [GetRValue(Color), GetGValue(Color), GetBValue(Color)]);
+end;
+
+procedure TfrmMain.AddToHistory(Handle: HWND; const MousePos: TPoint; PixelColor: TColor);
+var
+  Item: TWindowHistoryItem;
+  Rect: TRect;
+  ProcessId: DWORD;
+  ProcessHandle: THandle;
+  Buffer: array[0..MAX_PATH] of Char;
+begin
+  // Don't add if same as last entry
+  if Handle = FLastHistoryHandle then
+    Exit;
+
+  FLastHistoryHandle := Handle;
+
+  Item.Timestamp := Now;
+  Item.Handle := Handle;
+  Item.ClassName := GetWindowClassName(Handle);
+  Item.Title := GetWindowTitle(Handle);
+  Item.Position := MousePos;
+  Item.PixelColor := PixelColor;
+
+  // Get window size
+  if GetWindowRect(Handle, Rect) then
+  begin
+    Item.Size.cx := Rect.Right - Rect.Left;
+    Item.Size.cy := Rect.Bottom - Rect.Top;
+  end
+  else
+  begin
+    Item.Size.cx := 0;
+    Item.Size.cy := 0;
+  end;
+
+  // Get process info
+  GetWindowThreadProcessId(Handle, @ProcessId);
+  Item.ProcessId := ProcessId;
+  ProcessHandle := OpenProcess(PROCESS_QUERY_INFORMATION or PROCESS_VM_READ, False, ProcessId);
+  if ProcessHandle <> 0 then
+  begin
+    try
+      FillChar(Buffer, SizeOf(Buffer), 0);
+      if GetModuleFileNameEx(ProcessHandle, 0, Buffer, MAX_PATH) > 0 then
+        Item.ProcessName := ExtractFileName(string(Buffer))
+      else
+        Item.ProcessName := '<Unknown>';
+    finally
+      CloseHandle(ProcessHandle);
+    end;
+  end
+  else
+    Item.ProcessName := '<Not accessible>';
+
+  // Add to history (limit size)
+  if FHistory.Count >= MAX_HISTORY_ITEMS then
+    FHistory.Delete(0);
+
+  FHistory.Add(Item);
+  UpdateHistoryDisplay;
+end;
+
+procedure TfrmMain.UpdateHistoryDisplay;
+var
+  i: Integer;
+  Item: TWindowHistoryItem;
+  Lines: TStringList;
+begin
+  Lines := TStringList.Create;
+  try
+    Lines.Add('📜 INSPECTION HISTORY (newest first)');
+    Lines.Add('═══════════════════════════════════════════════════════════════════');
+    Lines.Add('');
+
+    // Display in reverse order (newest first)
+    for i := FHistory.Count - 1 downto 0 do
+    begin
+      Item := FHistory[i];
+      Lines.Add(Format('[%s] %s', [FormatDateTime('hh:nn:ss', Item.Timestamp), Item.ClassName]));
+      Lines.Add(Format('   Title: %s', [Item.Title]));
+      Lines.Add(Format('   Process: %s (PID: %d)', [Item.ProcessName, Item.ProcessId]));
+      Lines.Add(Format('   Handle: 0x%x | Pos: (%d,%d) | Size: %dx%d',
+        [Item.Handle, Item.Position.X, Item.Position.Y, Item.Size.cx, Item.Size.cy]));
+      Lines.Add(Format('   Pixel Color: %s | RGB(%d,%d,%d)',
+        [ColorToHexString(Item.PixelColor),
+         GetRValue(Item.PixelColor), GetGValue(Item.PixelColor), GetBValue(Item.PixelColor)]));
+      Lines.Add('───────────────────────────────────────────────────────────────────');
+    end;
+
+    if FHistory.Count = 0 then
+      Lines.Add('No history yet. Move mouse over windows to record history.');
+
+    memoHistory.Lines.BeginUpdate;
+    try
+      memoHistory.Lines.Assign(Lines);
+    finally
+      memoHistory.Lines.EndUpdate;
+    end;
+  finally
+    Lines.Free;
+  end;
 end;
 
 function TfrmMain.IsMouseOverWinInspector: Boolean;
@@ -716,33 +1056,59 @@ var
   ProcessHandle: THandle;
   ExeName: string;
   Buffer: array[0..MAX_PATH] of Char;
+  PixelColor: TColor;
 begin
-  // Check if mouse is over WinInspector
-  MouseOverWinInspector := IsMouseOverWinInspector;
-
-  // Update visual indicator
-  if MouseOverWinInspector then
+  // If frozen, use frozen state
+  if FFrozen then
   begin
-    lblStatus.Caption := '⏸️  PAUSED - Mouse over WinInspector (move mouse away to resume)';
+    MousePos := FFrozenMousePos;
+    WindowHandle := FFrozenHandle;
+    lblStatus.Caption := '🔒 FROZEN - Press F12 or click Unfreeze to resume';
     lblStatus.Font.Color := clRed;
     PanelStatus.Color := $00E0E0FF; // Light red
-  end;
-
-  // If mouse is over WinInspector, suspend update
-  if MouseOverWinInspector then
+  end
+  else
   begin
-    FLastMouseOverWinInspector := True;
-    Exit;
+    // Check if mouse is over WinInspector
+    MouseOverWinInspector := IsMouseOverWinInspector;
+
+    // Update visual indicator
+    if MouseOverWinInspector then
+    begin
+      lblStatus.Caption := '⏸️  PAUSED - Mouse over WinInspector (move mouse away to resume)';
+      lblStatus.Font.Color := clRed;
+      PanelStatus.Color := $00E0E0FF; // Light red
+    end;
+
+    // If mouse is over WinInspector, suspend update
+    if MouseOverWinInspector then
+    begin
+      FLastMouseOverWinInspector := True;
+      Exit;
+    end;
+
+    // Mouse has left WinInspector
+    FLastMouseOverWinInspector := False;
+
+    // Get mouse position
+    GetCursorPos(MousePos);
+
+    // Find window under cursor
+    WindowHandle := WindowFromPoint(MousePos);
   end;
 
-  // Mouse has left WinInspector
-  FLastMouseOverWinInspector := False;
+  // Get pixel color under cursor
+  PixelColor := GetPixelColorUnderCursor(MousePos);
 
-  // Get mouse position
-  GetCursorPos(MousePos);
+  // Update color preview panel
+  PanelColorPreview.Color := PixelColor;
+  lblColorInfo.Caption := Format('🎨 %s | RGB(%d,%d,%d)',
+    [ColorToHexString(PixelColor),
+     GetRValue(PixelColor), GetGValue(PixelColor), GetBValue(PixelColor)]);
 
-  // Find window under cursor
-  WindowHandle := WindowFromPoint(MousePos);
+  // Add to history (only when not frozen and window changes)
+  if (not FFrozen) and (WindowHandle <> 0) then
+    AddToHistory(WindowHandle, MousePos, PixelColor);
 
   Info := TStringList.Create;
   MonitorInfoLines := TStringList.Create;

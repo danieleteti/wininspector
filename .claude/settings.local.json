@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(where dcc32)",
+      "Bash(\"C:\\Program Files (x86)\\Embarcadero\\Studio\\23.0\\bin\\dcc32.exe\" -B WinInspector.dpr)",
+      "Read(//c/DEV/danieleteti_blog/content/post/**)",
+      "Bash(\"C:\\\\Program Files \\(x86\\)\\\\Embarcadero\\\\Studio\\\\37.0\\\\bin\\\\dcc32.exe\" -B \"C:\\\\DEV\\\\wininspector\\\\WinInspector.dpr\")",
+      "Bash(start \"\" \"C:\\\\DEV\\\\wininspector\\\\bin\\\\WinInspector.exe\")",
+      "Bash(dir \"C:\\\\DEV\\\\danieleteti_blog\")",
+      "Bash(dir \"C:\\\\DEV\\\\danieleteti_blog\\\\layouts\")",
+      "Bash(dir \"C:\\\\DEV\\\\danieleteti_blog\\\\layouts\\\\_default\")",
+      "Bash(dir:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
